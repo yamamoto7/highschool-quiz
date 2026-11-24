@@ -6,7 +6,11 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint"
+    "lint": "eslint",
+    "data": "node scripts/build-data.mjs",
+    "map": "node scripts/build-bvmap.mjs",
+    "wiki": "node scripts/fetch-wiki.mjs && node scripts/build-wiki.mjs",
+    "simulate": "tsx scripts/simulate.ts"
   },
   "dependencies": {
     "next": "16.4.6",
@@ -14,13 +18,17 @@
     "react-dom": "19.3.0"
   },
   "devDependencies": {
+    "@mapbox/vector-tile": "^3.0.0",
     "@tailwindcss/turbopack": "4.3.3",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
     "eslint-config-next": "16.4.6",
+    "pbf": "^5.2.0",
+    "pngjs": "^7.0.0",
     "tailwindcss": "4.3.3",
+    "tsx": "^4.23.15",
     "typescript": "^5"
   }
 }
