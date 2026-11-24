@@ -11,17 +11,84 @@ const RANK_DRAMA: Record<string, number> = { S: 1.4, A: 1.15, B: 0.9, C: 0.4, D:
 const rankKey = (id: string) => id.replace(/^(peak|kanji|st|pref|region|river)_.*$/, "$1");
 // 聞くまでもない質問を出さないための対応表。
 // 例:「海まで自転車で行ける？」に「いいえ」なら、夕日・朝日・岬・港などは聞かない。
+// 確率の計算だけだと「わずかに残った可能性」を割る質問として選ばれてしまうので、常識で分かる組は明示的に止める。
 const YES: Answer[] = ["yes", "probably"];
 const NO: Answer[] = ["no", "probably_not"];
 const SEA_DETAILS = ["sea_view", "sea_sunset", "sea_sunrise", "cape", "tsunami", "port", "lighthouse", "island"];
-const SKIP_IF: Record<string, Record<string, Answer[]>> = {
-  ...Object.fromEntries(SEA_DETAILS.map((id) => [id, { landlocked: YES, sea_bike: NO }])),
-  // 海が見えた・港があったなら、海が近いのは分かっている
-  sea_bike: { landlocked: YES, sea_view: YES, port: YES, lighthouse: YES, cape: YES },
-  landlocked: Object.fromEntries(["sea_bike", ...SEA_DETAILS].map((id) => [id, YES])),
-};
+const PAPER = ["d_bshi", "d_taiyo", "d_koyo", "d_torinoko", "d_ganpi"];
+const TRIPS = ["overseas", "w_trip_okinawa", "w_trip_hokkaido", "w_trip_kansai", "w_trip_tokyo", "w_trip_kyushu"];
+const VOCATIONAL = ["w_d_kogyo", "w_d_shogyo", "w_d_nogyo", "w_d_suisan", "w_d_kango", "w_d_fukushi", "w_d_katei", "w_farm", "w_ship"];
+const RAIL = ["walk", "far", "jr", "many_st", "shinkansen", "shin_view", "subway", "tram", "train_sound", "motorway"];
+const others = (ids: string[], id: string) => ids.filter((x) => x !== id);
+
+/** [この質問に, こう答えたら, これらは聞かない] */
+const SKIP_RULES: [string, Answer[], string[]][] = [
+  // 海
+  ["sea_bike", NO, SEA_DETAILS],
+  ["landlocked", YES, ["sea_bike", "w_ship", ...SEA_DETAILS]],
+  ...["sea_view", "port", "lighthouse", "cape"].map((id): [string, Answer[], string[]] => [id, YES, ["sea_bike"]]),
+  ...["sea_bike", ...SEA_DETAILS].map((id): [string, Answer[], string[]] => [id, YES, ["landlocked"]]),
+  ["highland", YES, ["tsunami"]],
+  // 島（本土と陸続きでない）なら、鉄道や本州かどうかは聞かない
+  ["island", YES, ["honshu", ...RAIL]],
+  // 雪・気候
+  ["snow", NO, ["japan_sea", "sakura"]],
+  // 駅からの距離
+  ["walk", YES, ["far"]],
+  ["walk", NO, ["many_st"]],
+  ["far", YES, ["walk", "many_st", "train_sound"]],
+  ["shinkansen", NO, ["shin_view"]],
+  // 街の大きさ
+  ["town", YES, ["capital", "ward_city", "urban", "subway", "many_st", "tram", "mono"]],
+  ["capital", YES, ["town", "only_hs"]],
+  ["ward_city", YES, ["town", "only_hs"]],
+  ["subway", YES, ["town", "only_hs", "wildlife"]],
+  ["only_hs", YES, ["hs", "capital", "ward_city", "urban", "subway"]],
+  ["hs", YES, ["only_hs"]],
+  // まわりの景色
+  ["urban", YES, ["paddy", "field", "wildlife"]],
+  ["paddy", YES, ["urban", "field"]],
+  ["field", YES, ["paddy", "urban"]],
+  ["wildlife", YES, ["urban"]],
+  ["mt_view", NO, ["basin"]],
+  // 設置者・宗教
+  ["private", YES, ["municipal"]],
+  ["private", NO, ["rel_any", "rel_chr", "rel_bud"]],
+  ["municipal", YES, ["private", "affil", "rel_any", "rel_chr", "rel_bud"]],
+  ["rel_any", NO, ["rel_chr", "rel_bud"]],
+  ["rel_chr", YES, ["rel_bud", "rel_any"]],
+  ["rel_bud", YES, ["rel_chr", "rel_any"]],
+  // 制服・男女
+  ["shifuku", YES, ["sailor", "gakuran"]],
+  ["sailor", YES, ["shifuku", "skirt"]],
+  ["gakuran", YES, ["shifuku"]],
+  ["skirt", NO, ["sailor", "jogakko", "w_coed_later"]],
+  // 学科
+  ["no_futsu", YES, ["dept"]],
+  ["dept", NO, ["no_futsu", ...VOCATIONAL]],
+  // 寮・規模
+  ["dorm", NO, ["w_all_dorm"]],
+  ["w_all_dorm", YES, ["dorm"]],
+  ["big", YES, ["small"]],
+  ["small", YES, ["big"]],
+  // 歴史
+  ["new", YES, ["kyusei", "jogakko", "hanko", "w_air_raid", "w_bunkazai"]],
+  ["kyusei", YES, ["jogakko", "new"]],
+  ["jogakko", YES, ["kyusei", "new"]],
+  ["hanko", YES, ["new"]],
+  ["koshien", NO, ["w_koshien_win"]],
+  // どれか1つに決まるもの（模造紙の呼び名、修学旅行の行き先）
+  ...PAPER.map((id): [string, Answer[], string[]] => [id, YES, others(PAPER, id)]),
+  ...TRIPS.map((id): [string, Answer[], string[]] => [id, YES, others(TRIPS, id)]),
+];
 function applySkips(questions: Question[]): Question[] {
-  for (const q of questions) if (SKIP_IF[q.id]) q.skipIf = SKIP_IF[q.id];
+  const byId = new Map(questions.map((q) => [q.id, q]));
+  for (const [when, answers, skips] of SKIP_RULES)
+    for (const id of skips) {
+      const q = byId.get(id);
+      if (!q || !byId.has(when)) continue;
+      q.skipIf = { ...q.skipIf, [when]: [...(q.skipIf?.[when] ?? []), ...answers] };
+    }
   return questions;
 }
 
