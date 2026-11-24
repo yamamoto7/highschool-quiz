@@ -3,12 +3,28 @@
 // データは推定を含むので、確率は 0/1 に振り切らず、1問の食い違いで正解が消えないようにしている。
 
 import { mentions, PREFS, type School } from "./data";
-import type { DenseQuestion, Question, SparseQuestion } from "./engine";
+import type { Answer, DenseQuestion, Question, SparseQuestion } from "./engine";
 import RANKS from "./question-ranks.json";
 
 /** 手動のランクづけ（lib/question-ranks.json）。S〜C は優先度を上書きし、X はその質問を出さない。 */
 const RANK_DRAMA: Record<string, number> = { S: 1.4, A: 1.15, B: 0.9, C: 0.4, D: 0.12 };
 const rankKey = (id: string) => id.replace(/^(peak|kanji|st|pref|region|river)_.*$/, "$1");
+// 聞くまでもない質問を出さないための対応表。
+// 例:「海まで自転車で行ける？」に「いいえ」なら、夕日・朝日・岬・港などは聞かない。
+const YES: Answer[] = ["yes", "probably"];
+const NO: Answer[] = ["no", "probably_not"];
+const SEA_DETAILS = ["sea_view", "sea_sunset", "sea_sunrise", "cape", "tsunami", "port", "lighthouse", "island"];
+const SKIP_IF: Record<string, Record<string, Answer[]>> = {
+  ...Object.fromEntries(SEA_DETAILS.map((id) => [id, { landlocked: YES, sea_bike: NO }])),
+  // 海が見えた・港があったなら、海が近いのは分かっている
+  sea_bike: { landlocked: YES, sea_view: YES, port: YES, lighthouse: YES, cape: YES },
+  landlocked: Object.fromEntries(["sea_bike", ...SEA_DETAILS].map((id) => [id, YES])),
+};
+function applySkips(questions: Question[]): Question[] {
+  for (const q of questions) if (SKIP_IF[q.id]) q.skipIf = SKIP_IF[q.id];
+  return questions;
+}
+
 function applyRanks(questions: Question[]): Question[] {
   const ranks = RANKS as Record<string, string>;
   return questions
@@ -1231,5 +1247,5 @@ export function buildQuestions(schools: School[], peaks: string[] = []): Questio
       ),
     );
 
-  return applyRanks(out);
+  return applySkips(applyRanks(out));
 }

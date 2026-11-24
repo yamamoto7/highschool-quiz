@@ -12,6 +12,8 @@ type QuestionBase = {
   maxEff?: number;
   /** 出題条件: これだけ質問した後なら解禁（maxEff と OR） */
   minAsked?: number;
+  /** すでに出た答えから聞くまでもないと分かるとき、出題しない。質問ID → その答えなら出さない、の対応 */
+  skipIf?: Record<string, Answer[]>;
 };
 export type DenseQuestion = QuestionBase & { kind: "dense"; p: Float32Array };
 /** members に含まれる学校は hi、それ以外は lo の確率で「はい」 */
@@ -158,9 +160,10 @@ export function decide(
   if (asked >= BASE_MAX_QUESTIONS + 8 * rejected.size) return { type: "guess", index: top };
 
   const eff = effectiveCount(w);
-  const askedIds = new Set(turns.map((t) => t.q.id));
+  const answers = new Map(turns.map((t) => [t.q.id, t.a]));
   const pool = questions.filter((q) => {
-    if (askedIds.has(q.id)) return false;
+    if (answers.has(q.id)) return false;
+    if (q.skipIf) for (const id in q.skipIf) if (q.skipIf[id].includes(answers.get(id)!)) return false;
     if (q.maxEff === undefined && q.minAsked === undefined) return true;
     return (q.maxEff !== undefined && eff <= q.maxEff) || (q.minAsked !== undefined && asked >= q.minAsked);
   });
